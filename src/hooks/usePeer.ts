@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { useGameStore } from '../store/useGameStore';
+import { peerConfig } from '../config/peerConfig';
 import type { ChatMessage, PenduState } from '../store/useGameStore';
 
 export type PeerMessage =
@@ -14,6 +15,9 @@ export type PeerMessage =
 let peerInstance: Peer | null = null;
 let peerConnections: Record<string, DataConnection> = {};
 let peerInitialized = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_RECONNECT_ATTEMPTS = 5;
+let reconnectAttempts = 0;
 
 function handleMessage(data: PeerMessage) {
   const store = useGameStore.getState();
@@ -99,6 +103,80 @@ function broadcast(data: PeerMessage) {
 }
 
 /**
+ * Crée et configure une instance Peer avec gestion d'erreurs.
+ */
+function createPeer(): Peer {
+  const peer = new Peer(peerConfig);
+
+  peer.on('open', (id) => {
+    reconnectAttempts = 0; // reset on successful connection
+    useGameStore.getState().setMyId(id);
+    const store = useGameStore.getState();
+    if (!store.myName) {
+      store.setMyName(`Joueur_${id.slice(0, 5)}`);
+    }
+    console.log('[PeerJS] Connecté au serveur de signaling, id:', id);
+  });
+
+  peer.on('connection', (conn) => setupConnection(conn));
+
+  peer.on('error', (err) => {
+    console.error('[PeerJS] Erreur:', err.type, err.message);
+
+    // Si le serveur de signaling est injoignable → reconnecter
+    if (
+      err.type === 'network' ||
+      err.type === 'server-error' ||
+      err.type === 'socket-error' ||
+      err.type === 'socket-closed'
+    ) {
+      scheduleReconnect();
+    }
+
+    // peer-unavailable = l'ID distant n'existe pas → pas de reconnexion
+    if (err.type === 'peer-unavailable') {
+      console.warn('[PeerJS] Peer distant introuvable. Vérifie l\'ID.');
+    }
+  });
+
+  peer.on('disconnected', () => {
+    console.warn('[PeerJS] Déconnecté du serveur de signaling');
+    // Tenter de reconnecter au serveur de signaling (pas de nouveau Peer)
+    if (!peer.destroyed) {
+      peer.reconnect();
+    }
+  });
+
+  peer.on('close', () => {
+    console.warn('[PeerJS] Peer fermé');
+  });
+
+  return peer;
+}
+
+/**
+ * Re-création du Peer après un échec réseau.
+ */
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error('[PeerJS] Abandon après', MAX_RECONNECT_ATTEMPTS, 'tentatives');
+    return;
+  }
+  reconnectAttempts++;
+  const delay = Math.min(2000 * reconnectAttempts, 10000);
+  console.log(`[PeerJS] Reconnexion dans ${delay}ms (tentative ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (peerInstance) {
+      peerInstance.destroy();
+    }
+    peerInstance = createPeer();
+  }, delay);
+}
+
+/**
  * Hook d'initialisation du Peer — à appeler UNE SEULE FOIS dans App.tsx.
  */
 export function usePeerInit() {
@@ -106,25 +184,15 @@ export function usePeerInit() {
     if (peerInitialized) return;
     peerInitialized = true;
 
-    const peer = new Peer();
-    peerInstance = peer;
-
-    peer.on('open', (id) => {
-      useGameStore.getState().setMyId(id);
-      const store = useGameStore.getState();
-      // Ne pas écraser un pseudo déjà défini (ex: restauré depuis localStorage)
-      if (!store.myName) {
-        store.setMyName(`Joueur_${id.slice(0, 5)}`);
-      }
-    });
-
-    peer.on('connection', (conn) => setupConnection(conn));
+    peerInstance = createPeer();
 
     return () => {
-      peer.destroy();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      peerInstance?.destroy();
       peerInstance = null;
       peerConnections = {};
       peerInitialized = false;
+      reconnectAttempts = 0;
     };
   }, []);
 }
@@ -135,7 +203,17 @@ export function usePeerInit() {
 export const usePeer = () => {
   const connectToFriend = useCallback((friendId: string) => {
     if (!friendId.trim()) return;
-    const conn = peerInstance?.connect(friendId);
+    if (!peerInstance || peerInstance.destroyed) {
+      console.error('[PeerJS] Pas de connexion au serveur de signaling. Réessaie dans un instant…');
+      // Auto-reconnect then retry
+      peerInstance = createPeer();
+      peerInstance.on('open', () => {
+        const conn = peerInstance?.connect(friendId, { reliable: true });
+        if (conn) setupConnection(conn);
+      });
+      return;
+    }
+    const conn = peerInstance.connect(friendId, { reliable: true });
     if (conn) setupConnection(conn);
   }, []);
 
