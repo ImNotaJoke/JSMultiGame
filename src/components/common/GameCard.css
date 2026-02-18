@@ -1,0 +1,74 @@
+.gamecard-wrapper {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  border-radius: 15px;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 4px 10px var(--shadow);
+  transition: all 0.3s ease;
+}
+
+.gamecard-wrapper.hovered {
+  box-shadow: 0 0 20px var(--shadow-glow);
+}
+
+.gamecard-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.gamecard-img.zoomed {
+  transform: scale(1.1);
+}
+
+.gamecard-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--overlay-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.gamecard-title {
+  margin: 0;
+  color: white;
+  font-size: 20px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.gamecard-btn-create {
+  padding: 10px 28px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: black;
+  font-weight: bold;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.2s;
+}
+
+.gamecard-btn-create:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px var(--shadow-glow3);
+}
+
+@media (max-width: 600px) {
+  .gamecard-wrapper {
+    height: 140px;
+    border-radius: 10px;
+  }
+  .gamecard-title {
+    font-size: 16px;
+  }
+  .gamecard-btn-create {
+    padding: 8px 20px;
+    font-size: 13px;
+  }
+}

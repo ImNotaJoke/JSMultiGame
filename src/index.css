@@ -1,0 +1,83 @@
+/* ─── Theme: dark (default) ─── */
+:root {
+  --bg-main: #1a1a1a;
+  --bg-card: #222;
+  --bg-dark: #111;
+  --bg-subtle: #181818;
+  --bg-input: #2a2a2a;
+  --bg-player: #1e1e1e;
+  --bg-accent-area: #1a2e2a;
+  --bg-host-notice: #2a2510;
+  --text-primary: #fff;
+  --text-secondary: #aaa;
+  --text-muted: #888;
+  --text-dim: #666;
+  --text-dark: #555;
+  --text-placeholder: #ccc;
+  --accent: #00ffcc;
+  --accent-blue: #4dabf7;
+  --accent-gold: #ffd700;
+  --accent-warn: #ff9800;
+  --accent-error: #ff3333;
+  --accent-success: #66ff66;
+  --border: #333;
+  --border-light: #444;
+  --border-medium: #555;
+  --border-connect: #282828;
+  --border-host: #4a3f20;
+  --shadow: rgba(0,0,0,0.3);
+  --shadow-accent: rgba(0,255,204,0.3);
+  --shadow-glow: #00ffcc77;
+  --shadow-glow2: #00ffcc88;
+  --shadow-glow3: #00ffcc66;
+  --overlay: rgba(0,0,0,0.7);
+  --overlay-card: rgba(0,0,0,0.45);
+  --chat-me-bg: #005f4f;
+  --chat-me-border: #00ffcc;
+}
+
+/* ─── Theme: light ─── */
+[data-theme="light"] {
+  --bg-main: #f0f2f5;
+  --bg-card: #ffffff;
+  --bg-dark: #e8eaed;
+  --bg-subtle: #f5f5f5;
+  --bg-input: #ffffff;
+  --bg-player: #f8f9fa;
+  --bg-accent-area: #e6f7f2;
+  --bg-host-notice: #fff8e0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555;
+  --text-muted: #777;
+  --text-dim: #999;
+  --text-dark: #bbb;
+  --text-placeholder: #666;
+  --accent: #00b894;
+  --accent-blue: #2e86de;
+  --accent-gold: #d4a017;
+  --accent-warn: #e67e22;
+  --accent-error: #e74c3c;
+  --accent-success: #27ae60;
+  --border: #ddd;
+  --border-light: #ccc;
+  --border-medium: #bbb;
+  --border-connect: #ddd;
+  --border-host: #e6d88a;
+  --shadow: rgba(0,0,0,0.08);
+  --shadow-accent: rgba(0,184,148,0.2);
+  --shadow-glow: rgba(0,184,148,0.3);
+  --shadow-glow2: rgba(0,184,148,0.4);
+  --shadow-glow3: rgba(0,184,148,0.25);
+  --overlay: rgba(0,0,0,0.4);
+  --overlay-card: rgba(255,255,255,0.6);
+  --chat-me-bg: #d0f5ed;
+  --chat-me-border: #00b894;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+}

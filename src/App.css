@@ -1,0 +1,6 @@
+.app-root {
+  background-color: var(--bg-main);
+  min-height: 100vh;
+  color: var(--text-primary);
+  transition: background-color 0.3s, color 0.3s;
+}
