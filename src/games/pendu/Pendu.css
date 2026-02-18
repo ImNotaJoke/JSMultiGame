@@ -476,6 +476,15 @@
   margin-top: 15px;
 }
 
+/* Waiting for host message */
+.pendu-waiting-host {
+  text-align: center;
+  color: var(--text-placeholder);
+  font-style: italic;
+  margin: 12px 0;
+  font-size: 15px;
+}
+
 /* Keyboard key states */
 .pendu-key-btn.key-default {
   background: var(--bg-input);

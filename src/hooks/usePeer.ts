@@ -19,47 +19,80 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const MAX_RECONNECT_ATTEMPTS = 5;
 let reconnectAttempts = 0;
 
-function handleMessage(data: PeerMessage) {
+/** Message types that the host should relay to all other peers */
+const RELAY_TYPES: PeerMessage['type'][] = ['PENDU_UPDATE', 'CHAT_MESSAGE', 'PLAYER_SYNC'];
+
+function handleMessage(data: PeerMessage, senderId?: string) {
   const store = useGameStore.getState();
-  const { setCurrentGame, updatePendu, addChatMessage, addPlayer } = store;
 
   switch (data.type) {
-    case 'CHANGE_GAME':
-      useGameStore.getState().setCurrentGame(data.game);
+    case 'CHANGE_GAME': {
+      // Only accept CHANGE_GAME from the room host
+      if (senderId && store.pendu.hostId && senderId !== store.pendu.hostId) {
+        console.warn('[PeerJS] CHANGE_GAME ignoré: seul l\'hôte peut changer de vue');
+        break;
+      }
+      store.setCurrentGame(data.game);
+      if (data.game === 'HUB') {
+        store.resetPendu();
+      }
       break;
+    }
     case 'PENDU_UPDATE':
-      useGameStore.getState().updatePendu(data.payload);
+      store.updatePendu(data.payload);
       break;
     case 'CHAT_MESSAGE':
-      useGameStore.getState().addChatMessage(data.payload);
+      store.addChatMessage(data.payload);
       break;
     case 'PLAYER_SYNC':
-      useGameStore.getState().addPlayer({ id: data.payload.id, name: data.payload.name, isHost: false });
+      store.addPlayer({ id: data.payload.id, name: data.payload.name, isHost: false });
       break;
     case 'REQUEST_SYNC': {
       const syncData: PeerMessage = {
         type: 'FULL_SYNC',
         payload: { pendu: store.pendu, game: store.currentGame }
       };
-      broadcast(syncData);
+      // Reply only to requester if possible
+      if (senderId && peerConnections[senderId]?.open) {
+        peerConnections[senderId].send(syncData);
+      } else {
+        broadcast(syncData);
+      }
       break;
     }
     case 'FULL_SYNC': {
-      const currentStore = useGameStore.getState();
       const incomingPendu = { ...data.payload.pendu };
       // If we have remote players, force versus mode
-      if (currentStore.players.length > 0 && incomingPendu.mode === 'solo') {
+      if (store.players.length > 0 && incomingPendu.mode === 'solo') {
         incomingPendu.mode = 'versus';
       }
       // Keep our hostId if incoming doesn't have one
-      if (!incomingPendu.hostId && currentStore.pendu.hostId) {
-        incomingPendu.hostId = currentStore.pendu.hostId;
+      if (!incomingPendu.hostId && store.pendu.hostId) {
+        incomingPendu.hostId = store.pendu.hostId;
       }
-      currentStore.updatePendu(incomingPendu);
-      currentStore.setCurrentGame(data.payload.game);
+      // Only update if state actually changed (avoid unnecessary re-renders)
+      if (JSON.stringify(store.pendu) !== JSON.stringify(incomingPendu)) {
+        store.updatePendu(incomingPendu);
+      }
+      if (store.currentGame !== data.payload.game) {
+        store.setCurrentGame(data.payload.game);
+      }
       break;
     }
   }
+}
+
+/**
+ * Relay a message from one peer to all other peers (host-only).
+ * This is critical because non-host players are only connected to the host,
+ * not to each other. Without relay, player B's actions are invisible to player C.
+ */
+function relayToOthers(data: PeerMessage, excludePeerId: string) {
+  Object.entries(peerConnections).forEach(([peerId, conn]) => {
+    if (peerId !== excludePeerId && conn.open) {
+      conn.send(data);
+    }
+  });
 }
 
 function setupConnection(conn: DataConnection) {
@@ -87,12 +120,59 @@ function setupConnection(conn: DataConnection) {
   });
 
   conn.on('data', (data: any) => {
-    handleMessage(data as PeerMessage);
+    const msg = data as PeerMessage;
+    handleMessage(msg, conn.peer);
+
+    // Host relay: forward relevant messages to all other peers
+    const store = useGameStore.getState();
+    if (store.pendu.hostId === store.myId && RELAY_TYPES.includes(msg.type)) {
+      relayToOthers(msg, conn.peer);
+    }
   });
 
   conn.on('close', () => {
-    useGameStore.getState().removePlayer(conn.peer);
-    delete peerConnections[conn.peer];
+    const store = useGameStore.getState();
+    const leavingId = conn.peer;
+    store.removePlayer(leavingId);
+    delete peerConnections[leavingId];
+
+    // If the host disconnected, all players go back to hub
+    if (leavingId === store.pendu.hostId) {
+      store.resetPendu();
+      store.setCurrentGame('HUB');
+      return;
+    }
+
+    // Handle game state when a non-host player leaves during versus
+    if (store.pendu.mode === 'versus' && store.pendu.phase === 'PLAYING') {
+      const newStates = store.pendu.playerStates.map(ps =>
+        ps.playerId === leavingId ? { ...ps, eliminated: true } : { ...ps }
+      );
+
+      const update: Partial<PenduState> = { playerStates: newStates };
+
+      // If it was the leaving player's turn, advance to next active player
+      if (store.pendu.currentTurnId === leavingId) {
+        const active = newStates.filter(ps => !ps.eliminated && ps.playerId !== store.pendu.chooserId);
+        if (active.length > 0) {
+          update.currentTurnId = active[0].playerId;
+        } else {
+          update.phase = 'ROUND_LOST';
+        }
+      }
+
+      // Check if any active players remain
+      const remaining = newStates.filter(ps => !ps.eliminated && ps.playerId !== store.pendu.chooserId);
+      if (remaining.length === 0 && !update.phase) {
+        update.phase = 'ROUND_LOST';
+      }
+
+      store.updatePendu(update);
+      // Host broadcasts the updated state to remaining players
+      if (store.pendu.hostId === store.myId) {
+        broadcast({ type: 'PENDU_UPDATE', payload: update });
+      }
+    }
   });
 }
 
@@ -186,7 +266,23 @@ export function usePeerInit() {
 
     peerInstance = createPeer();
 
+    // Periodic state sync from host (safety net for missed messages)
+    const syncInterval = setInterval(() => {
+      const store = useGameStore.getState();
+      if (
+        store.pendu.hostId === store.myId &&
+        store.pendu.mode === 'versus' &&
+        Object.keys(peerConnections).length > 0
+      ) {
+        broadcast({
+          type: 'FULL_SYNC',
+          payload: { pendu: store.pendu, game: store.currentGame }
+        });
+      }
+    }, 5000);
+
     return () => {
+      clearInterval(syncInterval);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       peerInstance?.destroy();
       peerInstance = null;

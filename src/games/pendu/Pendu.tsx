@@ -41,7 +41,7 @@ function normalize(str: string): string {
 
 export default function Pendu() {
   const store = useGameStore();
-  const { broadcast, sendChat } = usePeer();
+  const { broadcast, sendChat, disconnectAll } = usePeer();
   const { myId, players, pendu, updatePendu } = store;
   const [wordGuess, setWordGuess] = useState('');
   const [notification, setNotification] = useState('');
@@ -259,9 +259,16 @@ export default function Pendu() {
   }, [isMyTurn, pendu, isChooser, isSolo, myState, myId, wordGuess, broadcast, updatePendu, getNextPlayer, showNotif]);
 
   const backToHub = () => {
+    broadcast({ type: 'CHANGE_GAME', game: 'HUB' });
     useGameStore.getState().resetPendu();
     useGameStore.getState().setCurrentGame('HUB');
-    broadcast({ type: 'CHANGE_GAME', game: 'HUB' });
+  };
+
+  /** Non-host players leave the room individually without affecting others */
+  const leaveRoom = () => {
+    disconnectAll();
+    useGameStore.getState().resetPendu();
+    useGameStore.getState().setCurrentGame('HUB');
   };
 
   const nextRound = useCallback((difficulty: 'facile' | 'moyen' | 'difficile') => {
@@ -385,16 +392,26 @@ export default function Pendu() {
           </div>
         </div>
 
-        <button
-          onClick={() => launchGame(lobbyDifficulty, lobbyMode)}
-          className="pendu-launch-btn"
-        >
-          🚀 LANCER LA PARTIE
-        </button>
+        {canLaunch ? (
+          <button
+            onClick={() => launchGame(lobbyDifficulty, lobbyMode)}
+            className="pendu-launch-btn"
+          >
+            🚀 LANCER LA PARTIE
+          </button>
+        ) : (
+          <p className="pendu-waiting-host">⏳ En attente de l'hôte pour lancer la partie...</p>
+        )}
 
-        <button onClick={backToHub} className="pendu-btn pendu-back-btn">
-          ⬅ Retour au Hub
-        </button>
+        {(isSolo || isHost || pendu.hostId === '') ? (
+          <button onClick={backToHub} className="pendu-btn pendu-back-btn">
+            ⬅ Retour au Hub
+          </button>
+        ) : (
+          <button onClick={leaveRoom} className="pendu-btn pendu-back-btn">
+            🚪 Quitter la room
+          </button>
+        )}
 
         <div className="pendu-lobby-chat">
           <ChatRoom />
@@ -407,7 +424,7 @@ export default function Pendu() {
 
   if (pendu.phase === 'ROUND_WON' || pendu.phase === 'ROUND_LOST') {
     const isWinner = pendu.winnerId === myId;
-    const canRelaunch = isSolo || isWinner || (pendu.phase === 'ROUND_LOST' && (isHost || allPlayers[0]?.id === myId));
+    const canRelaunch = isSolo || isHost;
 
     return (
       <div className="pendu-page">
@@ -442,9 +459,19 @@ export default function Pendu() {
           </div>
         )}
 
-        <button onClick={backToHub} className="pendu-btn pendu-back-btn-result">
-          ⬅ Retour au Hub
-        </button>
+        {!canRelaunch && !isSolo && (
+          <p className="pendu-waiting-host">⏳ En attente de l'hôte pour le prochain round...</p>
+        )}
+
+        {(isSolo || isHost) ? (
+          <button onClick={backToHub} className="pendu-btn pendu-back-btn-result">
+            ⬅ Retour au Hub
+          </button>
+        ) : (
+          <button onClick={leaveRoom} className="pendu-btn pendu-back-btn-result">
+            🚪 Quitter la room
+          </button>
+        )}
 
         <div className="pendu-lobby-chat">
           <ChatRoom />
@@ -586,9 +613,15 @@ export default function Pendu() {
             </div>
           </div>
 
-          <button onClick={backToHub} className="pendu-btn pendu-back-btn">
-            ⬅ Retour au Hub
-          </button>
+          {(isSolo || isHost) ? (
+            <button onClick={backToHub} className="pendu-btn pendu-back-btn">
+              ⬅ Retour au Hub
+            </button>
+          ) : (
+            <button onClick={leaveRoom} className="pendu-btn pendu-back-btn">
+              🚪 Quitter la room
+            </button>
+          )}
         </div>
 
         <div className="pendu-play-chat">
